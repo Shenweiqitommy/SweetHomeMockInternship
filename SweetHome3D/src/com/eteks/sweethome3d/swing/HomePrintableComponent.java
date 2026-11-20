@@ -55,6 +55,8 @@ import com.eteks.sweethome3d.viewcontroller.ContentManager;
 import com.eteks.sweethome3d.viewcontroller.HomeController;
 import com.eteks.sweethome3d.viewcontroller.PlanView;
 import com.eteks.sweethome3d.viewcontroller.View;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * A printable component used to print or preview the furniture, the plan 
@@ -351,25 +353,42 @@ public class HomePrintableComponent extends JComponent implements Printable {
           && (homePrint == null
               || homePrint.isPlanPrinted()
               || homePrint.isView3DPrinted())) {
-        final Level selectedLevel = home.getSelectedLevel();
+
         furnitureTable = (FurnitureTable)furnitureView;
         furnitureFilter = furnitureTable.getFurnitureFilter();
         furnitureTable.setFurnitureFilter(new FurnitureTable.FurnitureFilter() {
             public boolean include(Home home, HomePieceOfFurniture piece) {
-              // Print only furniture at selected level when the plan or the 3D view is printed
+              // Print furniture from all viewable levels
               return (furnitureFilter == null || furnitureFilter.include(home, piece))
-                  && piece.isAtLevel(selectedLevel)
-                  && (piece.getLevel() == null || piece.getLevel().isViewable());
+                      && (piece.getLevel() == null || piece.getLevel().isViewable());
             }
           });
       } else {
         furnitureFilter = null;
       }
-      // Try to print next furniture view page      
-      pageExists = ((Printable)furnitureView).print(g2D, pageFormat, page);
-      if (furnitureTable != null) {
-        // Restore previous filter
-        ((FurnitureTable)furnitureView).setFurnitureFilter(furnitureFilter);
+      // Save the original visible furniture columns
+      List<HomePieceOfFurniture.SortableProperty> originalColumns =
+              new ArrayList<HomePieceOfFurniture.SortableProperty>(
+                      home.getFurnitureVisibleProperties());
+
+      try {
+        // Temporarily show the Level column when printing
+        if (!originalColumns.contains(HomePieceOfFurniture.SortableProperty.LEVEL)) {
+          List<HomePieceOfFurniture.SortableProperty> printColumns =
+                  new ArrayList<HomePieceOfFurniture.SortableProperty>(originalColumns);
+          printColumns.add(HomePieceOfFurniture.SortableProperty.LEVEL);
+          home.setFurnitureVisibleProperties(printColumns);
+        }
+
+        // Print the furniture table
+        pageExists = ((Printable)furnitureView).print(g2D, pageFormat, page);
+      } finally {
+        // Restore the original columns and furniture filter
+        home.setFurnitureVisibleProperties(originalColumns);
+
+        if (furnitureTable != null) {
+          furnitureTable.setFurnitureFilter(furnitureFilter);
+        }
       }
       if (pageExists == PAGE_EXISTS
           && !this.printablePages.contains(page)) {
@@ -377,13 +396,18 @@ public class HomePrintableComponent extends JComponent implements Printable {
         this.furniturePageCount++;
       }
     }
-    if (pageExists == NO_SUCH_PAGE 
-        && planView != null 
-        && (homePrint == null || homePrint.isPlanPrinted())) {
-      // Try to print next plan view page
-      pageExists = ((Printable)planView).print(g2D, pageFormat, page - this.furniturePageCount);
+    if (pageExists == NO_SUCH_PAGE
+            && planView != null
+            && (homePrint == null || homePrint.isPlanPrinted())) {
+
+      // PlanComponent handles level selection and restoration
+      int planPageIndex = page - this.furniturePageCount;
+
+      pageExists = ((Printable)planView).print(
+              g2D, pageFormat, planPageIndex);
+
       if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
+              && !this.printablePages.contains(page)) {
         this.printablePages.add(page);
         this.planPageCount++;
       }
